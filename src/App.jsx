@@ -19,7 +19,7 @@ const CryptoPortfolioTracker = () => {
   const [initialPrices, setInitialPrices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [startDate] = useState(new Date());
+  const [startDate] = useState(new Date('2025-12-11T22:30:00-05:00'));
   const [priceHistory, setPriceHistory] = useState([]);
   const [lastUpdate, setLastUpdate] = useState(null);
 
