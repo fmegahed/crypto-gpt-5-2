@@ -7,21 +7,32 @@ const CryptoPortfolioTracker = () => {
   const TARGET_MULTIPLIER = 5;
   const TRACKING_DAYS = 180;
   
+  // BASELINE: December 11, 2025 11:37 PM Eastern Time
+  const START_DATE = new Date('2025-12-11T23:37:00-05:00');
+  
+  // FIXED BASELINE PRICES - Everyone sees same performance from these prices
+  const BASELINE_PRICES = {
+    'arbitrum': { price: 0.2113, change24h: 0 },           // ARB
+    'optimism': { price: 0.3111, change24h: 0 },           // OP
+    'celestia': { price: 0.5897, change24h: 0 },           // TIA
+    'injective-protocol': { price: 5.56, change24h: 0 },   // INJ
+    'render-token': { price: 1.61, change24h: 0 }          // RENDER
+  };
+  
   const coins = [
-    { id: 'ondo-finance', symbol: 'ONDO', name: 'Ondo Finance', color: '#FF6B35' },
     { id: 'arbitrum', symbol: 'ARB', name: 'Arbitrum', color: '#28A0F0' },
+    { id: 'optimism', symbol: 'OP', name: 'Optimism', color: '#FF0420' },
     { id: 'celestia', symbol: 'TIA', name: 'Celestia', color: '#7B61FF' },
-    { id: 'render-token', symbol: 'RENDER', name: 'Render', color: '#E84855' },
-    { id: 'akash-network', symbol: 'AKT', name: 'Akash Network', color: '#00D9FF' }
+    { id: 'injective-protocol', symbol: 'INJ', name: 'Injective', color: '#00F2FE' },
+    { id: 'render-token', symbol: 'RENDER', name: 'Render', color: '#E84855' }
   ];
 
   const [prices, setPrices] = useState({});
-  const [initialPrices, setInitialPrices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [startDate] = useState(new Date('2025-12-11T22:30:00-05:00'));
   const [priceHistory, setPriceHistory] = useState([]);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
   const fetchPrices = async () => {
     try {
@@ -44,17 +55,6 @@ const CryptoPortfolioTracker = () => {
       setPrices(formattedPrices);
       setLastUpdate(new Date());
       
-      if (!initialPrices) {
-        setInitialPrices(formattedPrices);
-        const stored = localStorage.getItem('cryptoPortfolioStart');
-        if (!stored) {
-          localStorage.setItem('cryptoPortfolioStart', JSON.stringify({
-            date: startDate.toISOString(),
-            prices: formattedPrices
-          }));
-        }
-      }
-      
       const timestamp = Date.now();
       setPriceHistory((prev) => {
         const newEntry = { timestamp };
@@ -75,22 +75,21 @@ const CryptoPortfolioTracker = () => {
   };
 
   useEffect(() => {
-    const stored = localStorage.getItem('cryptoPortfolioStart');
-    if (stored) {
-      const data = JSON.parse(stored);
-      setInitialPrices(data.prices);
-    }
-    
     fetchPrices();
-    const interval = setInterval(fetchPrices, 60000);
-    return () => clearInterval(interval);
+    const priceInterval = setInterval(fetchPrices, 60000);
+    const timeInterval = setInterval(() => setCurrentTime(Date.now()), 1000);
+    
+    return () => {
+      clearInterval(priceInterval);
+      clearInterval(timeInterval);
+    };
   }, []);
 
   const calculatePortfolioValue = () => {
     let total = 0;
     coins.forEach((coin) => {
-      if (prices[coin.id] && initialPrices?.[coin.id]) {
-        const holdings = COIN_ALLOCATION / initialPrices[coin.id].price;
+      if (prices[coin.id]) {
+        const holdings = COIN_ALLOCATION / BASELINE_PRICES[coin.id].price;
         total += holdings * prices[coin.id].price;
       }
     });
@@ -98,21 +97,36 @@ const CryptoPortfolioTracker = () => {
   };
 
   const calculateCoinValue = (coinId) => {
-    if (!prices[coinId] || !initialPrices?.[coinId]) return 0;
-    const holdings = COIN_ALLOCATION / initialPrices[coinId].price;
+    if (!prices[coinId]) return 0;
+    const holdings = COIN_ALLOCATION / BASELINE_PRICES[coinId].price;
     return holdings * prices[coinId].price;
   };
 
   const calculatePerformance = (coinId) => {
-    if (!prices[coinId] || !initialPrices?.[coinId]) return 0;
-    return ((prices[coinId].price - initialPrices[coinId].price) / initialPrices[coinId].price) * 100;
+    if (!prices[coinId]) return 0;
+    return ((prices[coinId].price - BASELINE_PRICES[coinId].price) / BASELINE_PRICES[coinId].price) * 100;
+  };
+
+  const getTimeRemaining = () => {
+    const endDate = new Date(START_DATE.getTime() + (TRACKING_DAYS * 24 * 60 * 60 * 1000));
+    const remaining = endDate.getTime() - currentTime;
+    
+    if (remaining <= 0) {
+      return { days: 0, hours: 0, minutes: 0, seconds: 0, total: 0 };
+    }
+    
+    const days = Math.floor(remaining / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((remaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+    
+    return { days, hours, minutes, seconds, total: remaining };
   };
 
   const portfolioValue = calculatePortfolioValue();
   const portfolioPerformance = ((portfolioValue - INITIAL_INVESTMENT) / INITIAL_INVESTMENT) * 100;
   const targetValue = INITIAL_INVESTMENT * TARGET_MULTIPLIER;
-  const daysElapsed = Math.floor((Date.now() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-  const daysRemaining = TRACKING_DAYS - daysElapsed;
+  const timeRemaining = getTimeRemaining();
 
   if (loading) {
     return (
@@ -287,8 +301,26 @@ const CryptoPortfolioTracker = () => {
             }}>
               TIME REMAINING
             </div>
-            <div style={{ fontSize: '48px', fontWeight: '700' }}>
-              {daysRemaining}
+            <div style={{ 
+              fontSize: '36px', 
+              fontWeight: '700',
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: '8px',
+              justifyContent: 'center'
+            }}>
+              <div>
+                <span style={{ fontSize: '48px' }}>{timeRemaining.days}</span>
+                <span style={{ fontSize: '16px', opacity: 0.7 }}>d</span>
+              </div>
+              <div>
+                <span style={{ fontSize: '48px' }}>{timeRemaining.hours}</span>
+                <span style={{ fontSize: '16px', opacity: 0.7 }}>h</span>
+              </div>
+              <div>
+                <span style={{ fontSize: '48px' }}>{timeRemaining.minutes}</span>
+                <span style={{ fontSize: '16px', opacity: 0.7 }}>m</span>
+              </div>
             </div>
             <div style={{ 
               fontSize: '16px',
